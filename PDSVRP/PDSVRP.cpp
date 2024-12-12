@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -13,12 +13,14 @@ double tinhkc(const vector<vector<double>>& mat, int node1, int node2) {
     c = sqrt(pow(mat[node1][1] - mat[node2][1], 2) + pow(mat[node1][2] - mat[node2][2], 2));
     return c;
 }
+double tinhkcmanhattan(const vector<vector<double>>& mat, int node1, int node2) {
+    return abs(mat[node1][1] - mat[node2][1]) + abs(mat[node1][2] - mat[node2][2]);
+}
 
 struct Trucks {
-    int pos = 0;
-    double current_capacity = 0; 
-    double total_time = 0; 
-    vector<int> route;
+    double current_capacity = 0;
+    double total_time = 0;
+    vector<int> route = {0,0};
 };
 
 struct Drones {
@@ -46,14 +48,36 @@ double tinhCostTruck(const vector<int>& route, const vector<vector<double>>& Ctr
 }
 
 // tinh thoi gian khi them mot node cua truck
-double tinhTotaltimetruck(Trucks truck, const vector<vector<double>>& Ttruck, int node) {
-    double total_time = truck.total_time;
+double tinhTotaltimetruck(Trucks truck, const vector<vector<double>>& Ttruck, int node, int insertPos) {
+    vector<int> newRoute = truck.route;
+    newRoute.insert(newRoute.begin() + insertPos, node);
 
-    total_time -= Ttruck[truck.pos][0];
-    total_time += Ttruck[truck.pos][node];
-    total_time += Ttruck[node][0];
+    double total_time = 0;
+    int prevNode = 0; 
+
+    for (int i = 0; i < newRoute.size(); ++i) {
+        int currentNode = newRoute[i];
+        total_time += Ttruck[prevNode][currentNode]; 
+        prevNode = currentNode;
+    }
+
+    total_time += Ttruck[prevNode][0]; 
 
     return total_time;
+}
+
+// tinh chi phi khi them mot node cua truck
+double tinhCostTruckTang(const vector<int>& route, const vector<vector<double>>& Ctruck, int node, int insertPos) {
+    double totalCost = 0;
+
+    int prevNode = route[insertPos - 1];
+    int nextNode = route[insertPos];
+
+    totalCost -= Ctruck[prevNode][nextNode];
+    totalCost += Ctruck[prevNode][node];
+    totalCost += Ctruck[node][nextNode];
+
+    return totalCost;
 }
 
 // tinh chi phi drone
@@ -174,30 +198,32 @@ int main() {
     vector<Drones> drones(num_drones);
     vector<int> remainingNodes = C;
 
-    //greedy
-
+    // greedy
     while (!remainingNodes.empty()) {
         int bestTruck = -1;
         int bestTruckNode = -1;
-        double minTruckCost = numeric_limits<double>::infinity();
+        double minTruckCostIncrease = numeric_limits<double>::infinity();
+        int bestTruckPos = -1;  
 
         for (int i = 0; i < trucks.size(); ++i) {
-            int currentPos = trucks[i].pos;
             for (int node : remainingNodes) {
                 if (trucks[i].current_capacity + matrix[node][3] <= truck_cap) {
-                    double cost = Ctruck[currentPos][node] + Ctruck[node][0] - Ctruck[currentPos][0];
-                    double newTotalTime = tinhTotaltimetruck(trucks[i], Ttruck, node);
+                    for (int j = 1; j < trucks[i].route.size(); ++j) {  
+                        double costIncrease = tinhCostTruckTang(trucks[i].route, Ctruck, node, j);
 
-                    if (newTotalTime <= truck_time_limit) {
-                        if (cost < minTruckCost) {
-                            minTruckCost = cost;
+                        double newTotalTime = tinhTotaltimetruck(trucks[i], Ttruck, node,j);
+
+                        if (newTotalTime <= truck_time_limit && costIncrease < minTruckCostIncrease) {
+                            minTruckCostIncrease = costIncrease;
                             bestTruck = i;
                             bestTruckNode = node;
+                            bestTruckPos = j;
                         }
                     }
                 }
             }
         }
+
         int bestDrone = -1;
         int bestDroneNode = -1;
         double minDroneCost = numeric_limits<double>::infinity();
@@ -217,21 +243,21 @@ int main() {
             }
         }
 
-
-        // neu drone co cost thap hon thi chon drone
-        if (bestDroneNode != -1 && minDroneCost < minTruckCost) {
-            drones[bestDrone].route.push_back(bestDroneNode);  
-            drones[bestDrone].total_time += Tdrone[bestDroneNode]; 
+        // Nếu drone có chi phí thấp hơn truck thì chọn drone
+        if (bestDroneNode != -1 && minDroneCost < minTruckCostIncrease) {
+            drones[bestDrone].route.push_back(bestDroneNode);
+            drones[bestDrone].total_time += Tdrone[bestDroneNode];
             remainingNodes.erase(remove(remainingNodes.begin(), remainingNodes.end(), bestDroneNode), remainingNodes.end());
         }
+        // Nếu truck có chi phí thấp hơn hoặc bằng drone, chọn truck và chèn node vào vị trí tốt nhất
         else if (bestTruckNode != -1) {
-            trucks[bestTruck].route.push_back(bestTruckNode);
-            trucks[bestTruck].current_capacity += matrix[bestTruckNode][3]; 
-            trucks[bestTruck].total_time = tinhTotaltimetruck(trucks[bestTruck], Ttruck, bestTruckNode);
-            trucks[bestTruck].pos = bestTruckNode;
+            trucks[bestTruck].route.insert(trucks[bestTruck].route.begin() + bestTruckPos, bestTruckNode);
+            trucks[bestTruck].current_capacity += matrix[bestTruckNode][3];
+            trucks[bestTruck].total_time = tinhTotaltimetruck(trucks[bestTruck], Ttruck, bestTruckNode, bestTruckPos);
             remainingNodes.erase(remove(remainingNodes.begin(), remainingNodes.end(), bestTruckNode), remainingNodes.end());
         }
     }
+
 
     // in kq
     double totalCost = 0;
